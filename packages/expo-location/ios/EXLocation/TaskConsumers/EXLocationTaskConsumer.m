@@ -11,6 +11,7 @@
 @interface EXLocationTaskConsumer ()
 
 @property (nonatomic, strong) CLLocationManager *locationManager;
+@property (nonatomic, strong) NSMutableArray<CLLocation *> *deferredLocations;
 
 @end
 
@@ -56,8 +57,8 @@
     CLLocationManager *locationManager = self->_locationManager;
     EXLocationAccuracy accuracy = [options[@"accuracy"] unsignedIntegerValue] ?: EXLocationAccuracyBalanced;
 
-    locationManager.desiredAccuracy = [EXLocation CLLocationAccuracyFromOption:accuracy];
-    locationManager.distanceFilter = [options[@"distanceInterval"] doubleValue] ?: kCLDistanceFilterNone;
+    locationManager.desiredAccuracy = kCLLocationAccuracyBest;//[EXLocation CLLocationAccuracyFromOption:accuracy];
+    locationManager.distanceFilter = kCLDistanceFilterNone;//[options[@"distanceInterval"] doubleValue] ?: kCLDistanceFilterNone;
 
     if (@available(iOS 11.0, *)) {
       locationManager.showsBackgroundLocationIndicator = [options[@"showsBackgroundLocationIndicator"] boolValue];
@@ -78,6 +79,7 @@
                            };
     [_task executeWithData:data withError:nil];
   }
+  [self maybeDeferNextUpdateOnManager:manager];
 }
 
 - (void)locationManager:(CLLocationManager *)manager didFailWithError:(NSError *)error
@@ -93,6 +95,11 @@
   }
 }
 
+- (void)locationManager:(CLLocationManager *)manager didFinishDeferredUpdatesWithError:(NSError *)error
+{
+  NSLog(@"locationManager:didFinishDeferredUpdatesWithError: %@", error.localizedDescription);
+}
+
 # pragma mark - internal
 
 - (void)reset
@@ -103,6 +110,47 @@
     self->_locationManager = nil;
     self->_task = nil;
   }];
+}
+
+- (void)maybeDeferNextUpdateOnManager:(CLLocationManager *)locationManager
+{
+  NSDictionary *deferredUpdates = _task.options[@"deferredUpdates"];
+
+  NSLog(@"deferredLocationUpdatesAvailable: %d", [CLLocationManager deferredLocationUpdatesAvailable]);
+
+  if (deferredUpdates) {
+    CLLocationDistance distance = [self _numberToDouble:deferredUpdates[@"distance"] defaultValue:CLLocationDistanceMax];
+    NSTimeInterval timeout = [self _numberToDouble:deferredUpdates[@"timeout"] defaultValue:CLTimeIntervalMax];
+
+    [locationManager allowDeferredLocationUpdatesUntilTraveled:distance timeout:timeout];
+  } else {
+    [locationManager disallowDeferredLocationUpdates];
+  }
+}
+
+- (void)deferLocation:(CLLocation *)location
+{
+  if (!_deferredLocations) {
+    _deferredLocations = [NSMutableArray new];
+  }
+  [_deferredLocations addObject:location];
+}
+
+- (BOOL)shouldReportDeferredLocationsWithLocation:(CLLocation *)currentLocation
+{
+  if (!_deferredLocations || _deferredLocations.count <= 0) {
+    return NO;
+  }
+  CLLocation *oldestLocation = _deferredLocations[0];
+  CLLocationDistance distance = [self _numberToDouble:_task.options[@"distanceInterval"] defaultValue:CLLocationDistanceMax];
+  NSTimeInterval timeout = [self _numberToDouble:_task.options[@"timeInterval"] defaultValue:CLTimeIntervalMax];
+
+  return [currentLocation.timestamp timeIntervalSinceDate:oldestLocation.timestamp] >= timeout || [currentLocation distanceFromLocation:oldestLocation] > distance;
+}
+
+- (double)_numberToDouble:(NSNumber *)number defaultValue:(double)defaultValue
+{
+  return number == nil ? defaultValue : [number doubleValue];
 }
 
 + (NSArray<NSDictionary *> *)_exportLocations:(NSArray<CLLocation *> *)locations

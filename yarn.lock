@@ -856,7 +856,7 @@
   dependencies:
     react-clone-referenced-element "^1.0.1"
 
-"@expo/react-native-touchable-native-feedback-safe@^1.1.1":
+"@expo/react-native-touchable-native-feedback-safe@^1.1.1", "@expo/react-native-touchable-native-feedback-safe@^1.1.2":
   version "1.1.2"
   resolved "https://registry.yarnpkg.com/@expo/react-native-touchable-native-feedback-safe/-/react-native-touchable-native-feedback-safe-1.1.2.tgz#7ef501d5d32140eed657f75f0de145d4a96244d8"
   integrity sha1-fvUB1dMhQO7WV/dfDeFF1KliRNg=
