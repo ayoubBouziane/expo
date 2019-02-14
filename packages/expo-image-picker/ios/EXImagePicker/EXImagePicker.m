@@ -27,7 +27,7 @@ const CGFloat EXDefaultImageQuality = 0.2;
 @property (nonatomic, strong) NSDictionary *customButtons;
 @property (nonatomic, weak) EXModuleRegistry *moduleRegistry;
 @property (nonatomic, weak) id<EXPermissionsInterface> permissionsModule;
-
+@property (nonatomic) Boolean restoreStatusBarVisibility;
 
 @end
 
@@ -46,6 +46,7 @@ EX_EXPORT_MODULE(ExponentImagePicker);
                             @"allowsEditing" : @NO,
                             @"base64": @NO,
                             };
+    self.restoreStatusBarVisibility = NO;
   }
   return self;
 }
@@ -82,7 +83,7 @@ EX_EXPORT_METHOD_AS(launchImageLibraryAsync, launchImageLibraryAsync:(NSDictiona
                   resolver:(EXPromiseResolveBlock)resolve
                   rejecter:(EXPromiseRejectBlock)reject)
 {
-  if (![self.permissionsModule hasGrantedPermission:@"camera"]) {
+  if (![self.permissionsModule hasGrantedPermission:@"cameraRoll"]) {
     reject(@"E_MISSING_PERMISSION", @"Missing camera roll permission.", nil);
     return;
   }
@@ -142,6 +143,7 @@ EX_EXPORT_METHOD_AS(launchImageLibraryAsync, launchImageLibraryAsync:(NSDictiona
   self.picker.delegate = self;
 
   dispatch_async(dispatch_get_main_queue(), ^{
+    [self possiblyPreserveVisibilityAndHideStatusBar:[[self.options objectForKey:@"allowsEditing"] boolValue]];
     id<EXUtilitiesInterface> utils = [self.moduleRegistry getModuleImplementingProtocol:@protocol(EXUtilitiesInterface)];
     [utils.currentViewController presentViewController:self.picker animated:YES completion:nil];
   });
@@ -150,6 +152,7 @@ EX_EXPORT_METHOD_AS(launchImageLibraryAsync, launchImageLibraryAsync:(NSDictiona
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info
 {
   dispatch_block_t dismissCompletionBlock = ^{
+    [self possiblyRestoreStatusBarVisibility];
     NSString *mediaType = [info objectForKey:UIImagePickerControllerMediaType];
     NSMutableDictionary *response = [[NSMutableDictionary alloc] init];
     response[@"cancelled"] = @NO;
@@ -340,9 +343,30 @@ EX_EXPORT_METHOD_AS(launchImageLibraryAsync, launchImageLibraryAsync:(NSDictiona
 {
   dispatch_async(dispatch_get_main_queue(), ^{
     [picker dismissViewControllerAnimated:YES completion:^{
+      [self possiblyRestoreStatusBarVisibility];
       self.resolve(@{@"cancelled": @YES});
     }];
   });
+}
+
+- (void)possiblyPreserveVisibilityAndHideStatusBar:(BOOL)allowsEditingEnabled
+{
+  // launching ImagePicker with allowsEdit option enabled on iOS11+ makes cropping rectangle
+  // displacement/slightly moved upwards, because of StatusBar visibility
+  // hiding StatusBar during picking process solves the displacement issue
+  // see https://forums.developer.apple.com/thread/98274
+  if (allowsEditingEnabled && ![[UIApplication sharedApplication] isStatusBarHidden]) {
+    [[UIApplication sharedApplication] setStatusBarHidden:YES withAnimation:NO];
+    _restoreStatusBarVisibility = YES;
+  }
+}
+
+- (void)possiblyRestoreStatusBarVisibility
+{
+  if (_restoreStatusBarVisibility) {
+    _restoreStatusBarVisibility = NO;
+    [[UIApplication sharedApplication] setStatusBarHidden:NO withAnimation:NO];
+  }
 }
 
 - (UIImage *)fixOrientation:(UIImage *)srcImg {
